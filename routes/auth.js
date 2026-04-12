@@ -9,11 +9,26 @@ router.post('/register', async (req, res) => {
   const { username, password } = req.body;
   try {
     const hash = await bcrypt.hash(password, 10);
-    await db.execute(
-      'INSERT INTO users (username, password_hash) VALUES (?, ?)',
-      [username, hash]
+
+    // Перевіряємо чи гравець вже є в minecraft_players
+    const [mcPlayers] = await db.execute(
+      'SELECT uuid FROM minecraft_players WHERE username = ?',
+      [username]
     );
-    res.json({ success: true, message: 'Акаунт створено' });
+    const minecraft_uuid = mcPlayers.length ? mcPlayers[0].uuid : null;
+
+    // Створюємо акаунт і одразу прив'язуємо UUID якщо є
+    await db.execute(
+      'INSERT INTO users (username, password_hash, minecraft_uuid) VALUES (?, ?, ?)',
+      [username, hash, minecraft_uuid]
+    );
+
+    res.json({
+      success: true,
+      message: minecraft_uuid
+        ? 'Акаунт створено і Minecraft прив\'язано автоматично!'
+        : 'Акаунт створено'
+    });
   } catch (err) {
     if (err.code === 'ER_DUP_ENTRY') {
       return res.status(400).json({ error: 'Такий нікнейм вже існує' });
