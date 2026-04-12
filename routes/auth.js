@@ -40,25 +40,47 @@ router.post('/login', async (req, res) => {
 
 // Прив'язати Minecraft UUID до акаунту
 // Отримати UUID по нікнейму через Mojang API
-router.post('/link-minecraft-username', async (req, res) => {
-  const { token, minecraft_username } = req.body;
+router.post('/player-join', async (req, res) => {
+  const { minecraft_uuid, minecraft_username, plugin_secret } = req.body;
+
+  if (plugin_secret !== process.env.PLUGIN_SECRET) {
+    return res.status(403).json({ error: 'Заборонено' });
+  }
+
+  try {
+    // Зберігаємо гравця в таблиці minecraft_players
+    await db.execute(`
+      INSERT INTO minecraft_players (uuid, username, last_seen)
+      VALUES (?, ?, NOW())
+      ON DUPLICATE KEY UPDATE username = ?, last_seen = NOW()
+    `, [minecraft_uuid, minecraft_username, minecraft_username]);
+
+    // Автоматично прив'язуємо UUID до акаунту на сайті якщо нікнейми збігаються
+    await db.execute(`
+      UPDATE users SET minecraft_uuid = ?
+      WHERE username = ? AND minecraft_uuid IS NULL
+    `, [minecraft_uuid, minecraft_username]);
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Помилка сервера' });
+  }
+});
+
+
+// Перевірити статус прив'язки
+router.get('/minecraft-status', async (req, res) => {
+  const token = req.headers.authorization?.split(' ')[1];
   try {
     const { userId } = jwt.verify(token, process.env.JWT_SECRET);
-    
-    // Запитуємо UUID у Mojang
-    const mojang = await fetch(
-      `https://api.mojang.com/users/profiles/minecraft/${minecraft_username}`
+    const [rows] = await db.execute(
+      'SELECT minecraft_uuid FROM users WHERE id = ?', [userId]
     );
-    if (!mojang.ok) return res.status(404).json({ error: 'Гравець не знайдений' });
-    
-    const { id: uuid } = await mojang.json();
-    // Mojang повертає uuid без дефісів, форматуємо
-    const formatted = `${uuid.slice(0,8)}-${uuid.slice(8,12)}-${uuid.slice(12,16)}-${uuid.slice(16,20)}-${uuid.slice(20)}`;
-    
-    await db.execute('UPDATE users SET minecraft_uuid = ? WHERE id = ?', [formatted, userId]);
-    res.json({ success: true, uuid: formatted });
+    const linked = !!(rows[0]?.minecraft_uuid);
+    res.json({ linked, uuid: rows[0]?.minecraft_uuid || null });
   } catch {
-    res.status(401).json({ error: 'Невалідний токен' });
+    res.status(401).json({ error: 'Не авторизований' });
   }
 });
 
