@@ -39,15 +39,24 @@ router.post('/login', async (req, res) => {
 });
 
 // Прив'язати Minecraft UUID до акаунту
-router.post('/link-minecraft', async (req, res) => {
-  const { token, minecraft_uuid } = req.body;
+// Отримати UUID по нікнейму через Mojang API
+router.post('/link-minecraft-username', async (req, res) => {
+  const { token, minecraft_username } = req.body;
   try {
     const { userId } = jwt.verify(token, process.env.JWT_SECRET);
-    await db.execute(
-      'UPDATE users SET minecraft_uuid = ? WHERE id = ?',
-      [minecraft_uuid, userId]
+    
+    // Запитуємо UUID у Mojang
+    const mojang = await fetch(
+      `https://api.mojang.com/users/profiles/minecraft/${minecraft_username}`
     );
-    res.json({ success: true });
+    if (!mojang.ok) return res.status(404).json({ error: 'Гравець не знайдений' });
+    
+    const { id: uuid } = await mojang.json();
+    // Mojang повертає uuid без дефісів, форматуємо
+    const formatted = `${uuid.slice(0,8)}-${uuid.slice(8,12)}-${uuid.slice(12,16)}-${uuid.slice(16,20)}-${uuid.slice(20)}`;
+    
+    await db.execute('UPDATE users SET minecraft_uuid = ? WHERE id = ?', [formatted, userId]);
+    res.json({ success: true, uuid: formatted });
   } catch {
     res.status(401).json({ error: 'Невалідний токен' });
   }

@@ -77,7 +77,8 @@ router.post('/block-break', authPlugin, async (req, res) => {
 // Гравець на сайті бачить свої квести
 router.get('/my', authUser, async (req, res) => {
   const [rows] = await db.execute(`
-    SELECT q.name, q.description, q.required_count,
+    SELECT q.id, q.name, q.description, q.required_count,
+           q.reward_command,
            COALESCE(qp.current_count, 0) AS current_count,
            COALESCE(qp.completed, FALSE) AS completed,
            qp.completed_at
@@ -86,7 +87,6 @@ router.get('/my', authUser, async (req, res) => {
       ON qp.quest_id = q.id AND qp.user_id = ?
     ORDER BY q.id
   `, [req.user.userId]);
-
   res.json(rows);
 });
 
