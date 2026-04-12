@@ -78,7 +78,7 @@ router.post('/block-break', authPlugin, async (req, res) => {
 router.get('/my', authUser, async (req, res) => {
   const [rows] = await db.execute(`
     SELECT q.id, q.name, q.description, q.required_count,
-           q.reward_command,
+           q.reward_display,
            COALESCE(qp.current_count, 0) AS current_count,
            COALESCE(qp.completed, FALSE) AS completed,
            qp.completed_at
