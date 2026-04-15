@@ -9,6 +9,7 @@ app.use(express.json());
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/quests', require('./routes/quests'));
 app.use('/api/items', require('./routes/items'));
+app.use('/api/profile', require('./routes/profile'));
 
 // Тестовий маршрут — щоб перевірити що сервер живий
 app.get('/ping', (req, res) => res.json({ status: 'ok' }));
