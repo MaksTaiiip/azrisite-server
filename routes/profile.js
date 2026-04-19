@@ -13,15 +13,13 @@ function authUser(req, res, next) {
   }
 }
 
-// Публічний профіль
 router.get('/user/:username', async (req, res) => {
   const [users] = await db.execute(`
     SELECT
       u.id, u.username, u.bio, u.minecraft_uuid,
       u.featured_items, u.featured_badges, u.created_at,
       av.image_url AS avatar_url,
-      bg.image_url AS banner_url,
-      bg.cosmetic_type AS banner_type
+      bg.image_url AS banner_url
     FROM users u
     LEFT JOIN items av ON av.id = u.avatar_item_id
     LEFT JOIN items bg ON bg.id = u.banner_item_id
@@ -38,27 +36,32 @@ router.get('/user/:username', async (req, res) => {
     WHERE ub.user_id = ? ORDER BY ub.obtained_at ASC
   `, [user.id]);
 
-  // Показуємо тільки вибрані бейджики (або всі якщо не вибрано)
+  // Показуємо тільки вибрані бейджики
   let shownBadges = allBadges;
   if (user.featured_badges) {
-    const ids = JSON.parse(user.featured_badges);
-    if (ids.length) shownBadges = allBadges.filter(b => ids.includes(b.id));
+    const ids = JSON.parse(user.featured_badges).map(Number);
+    if (ids.length) {
+      shownBadges = ids
+        .map(id => allBadges.find(b => b.id === id))
+        .filter(Boolean);
+    }
   }
 
-  // Предмети на показ
+  // ВИПРАВЛЕНО: шукаємо предмети через item_id з user_items
   let featuredItems = [];
   if (user.featured_items) {
-    const ids = JSON.parse(user.featured_items);
+    const ids = JSON.parse(user.featured_items).map(Number);
     if (ids.length) {
       const ph = ids.map(() => '?').join(',');
-      const [items] = await db.execute(
-        `SELECT i.id, i.slug, i.name, i.image_url, i.rarity
-         FROM user_items ui JOIN items i ON i.id = ui.item_id
-         WHERE ui.user_id = ? AND i.id IN (${ph})`,
-        [user.id, ...ids]
-      );
-      // Зберігаємо порядок як в ids
-      featuredItems = ids.map(id => items.find(it => it.id === id)).filter(Boolean);
+      const [items] = await db.execute(`
+        SELECT i.id, i.slug, i.name, i.image_url, i.rarity
+        FROM items i
+        WHERE i.id IN (${ph})
+      `, ids);
+      // Зберігаємо порядок
+      featuredItems = ids
+        .map(id => items.find(it => it.id === id))
+        .filter(Boolean);
     }
   }
 
@@ -66,7 +69,6 @@ router.get('/user/:username', async (req, res) => {
     username: user.username,
     avatar_url: user.avatar_url,
     banner_url: user.banner_url,
-    banner_is_photo: user.banner_type === 'background',
     bio: user.bio,
     status: user.minecraft_uuid ? 'player' : 'guest',
     badges: shownBadges,
@@ -75,7 +77,6 @@ router.get('/user/:username', async (req, res) => {
   });
 });
 
-// Дані для редагування
 router.get('/me/edit', authUser, async (req, res) => {
   const [rows] = await db.execute(
     'SELECT username, bio, avatar_item_id, banner_item_id, featured_items, featured_badges FROM users WHERE id = ?',
@@ -88,7 +89,6 @@ router.get('/me/edit', authUser, async (req, res) => {
   res.json(u);
 });
 
-// Аватарки гравця
 router.get('/me/avatars', authUser, async (req, res) => {
   const [items] = await db.execute(`
     SELECT i.id, i.slug, i.name, i.image_url, i.rarity
@@ -98,17 +98,16 @@ router.get('/me/avatars', authUser, async (req, res) => {
   res.json(items);
 });
 
-// Фони гравця
+// ВИПРАВЛЕНО: прибрано умову на cosmetic_type
 router.get('/me/backgrounds', authUser, async (req, res) => {
   const [items] = await db.execute(`
-    SELECT i.id, i.slug, i.name, i.image_url, i.rarity, i.cosmetic_type
+    SELECT i.id, i.slug, i.name, i.image_url, i.rarity
     FROM user_items ui JOIN items i ON i.id = ui.item_id
     WHERE ui.user_id = ? AND i.category = 'background'
   `, [req.user.userId]);
   res.json(items);
 });
 
-// Бейджики гравця
 router.get('/me/badges', authUser, async (req, res) => {
   const [badges] = await db.execute(`
     SELECT b.id, b.slug, b.name, b.description, b.icon, b.color
@@ -118,7 +117,6 @@ router.get('/me/badges', authUser, async (req, res) => {
   res.json(badges);
 });
 
-// Зберегти профіль
 router.put('/me/update', authUser, async (req, res) => {
   const { bio, avatar_item_id, banner_item_id, featured_items, featured_badges } = req.body;
 
