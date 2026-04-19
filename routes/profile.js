@@ -14,67 +14,64 @@ function authUser(req, res, next) {
 }
 
 router.get('/user/:username', async (req, res) => {
-  const [users] = await db.execute(`
-    SELECT
-      u.id, u.username, u.bio, u.minecraft_uuid,
-      u.featured_items, u.featured_badges, u.created_at,
-      av.image_url AS avatar_url,
-      bg.image_url AS banner_url
-    FROM users u
-    LEFT JOIN items av ON av.id = u.avatar_item_id
-    LEFT JOIN items bg ON bg.id = u.banner_item_id
-    WHERE u.username = ?
-  `, [req.params.username]);
+  try {
+    const [users] = await db.execute(`
+      SELECT
+        u.id, u.username, u.bio, u.minecraft_uuid,
+        u.featured_items, u.featured_badges, u.created_at,
+        av.image_url AS avatar_url,
+        bg.image_url AS banner_url
+      FROM users u
+      LEFT JOIN items av ON av.id = u.avatar_item_id
+      LEFT JOIN items bg ON bg.id = u.banner_item_id
+      WHERE u.username = ?
+    `, [req.params.username]);
 
-  if (!users.length) return res.status(404).json({ error: 'Не знайдено' });
-  const user = users[0];
+    if (!users.length) return res.status(404).json({ error: 'Не знайдено' });
+    const user = users[0];
 
-  // Всі бейджики гравця
-  const [allBadges] = await db.execute(`
-    SELECT b.id, b.slug, b.name, b.description, b.icon, b.color
-    FROM user_badges ub JOIN badges b ON b.id = ub.badge_id
-    WHERE ub.user_id = ? ORDER BY ub.obtained_at ASC
-  `, [user.id]);
+    const [allBadges] = await db.execute(`
+      SELECT b.id, b.slug, b.name, b.description, b.icon, b.color
+      FROM user_badges ub JOIN badges b ON b.id = ub.badge_id
+      WHERE ub.user_id = ? ORDER BY ub.obtained_at ASC
+    `, [user.id]);
 
-  // Показуємо тільки вибрані бейджики
-  let shownBadges = allBadges;
-  if (user.featured_badges) {
-    const ids = JSON.parse(user.featured_badges).map(Number);
-    if (ids.length) {
-      shownBadges = ids
-        .map(id => allBadges.find(b => b.id === id))
-        .filter(Boolean);
+    let shownBadges = allBadges;
+    if (user.featured_badges) {
+      const ids = JSON.parse(user.featured_badges).map(Number);
+      if (ids.length) {
+        shownBadges = ids.map(id => allBadges.find(b => b.id === id)).filter(Boolean);
+      }
     }
-  }
 
-  // ВИПРАВЛЕНО: шукаємо предмети через item_id з user_items
-  let featuredItems = [];
-  if (user.featured_items) {
-    const ids = JSON.parse(user.featured_items).map(Number);
-    if (ids.length) {
-      const ph = ids.map(() => '?').join(',');
-      const [items] = await db.execute(`
-        SELECT i.id, i.slug, i.name, i.image_url, i.rarity
-        FROM items i
-        WHERE i.id IN (${ph})
-      `, ids);
-      // Зберігаємо порядок
-      featuredItems = ids
-        .map(id => items.find(it => it.id === id))
-        .filter(Boolean);
+    let featuredItems = [];
+    if (user.featured_items) {
+      const ids = JSON.parse(user.featured_items).map(Number);
+      if (ids.length) {
+        const ph = ids.map(() => '?').join(',');
+        const [items] = await db.execute(
+          `SELECT i.id, i.slug, i.name, i.image_url, i.rarity FROM items i WHERE i.id IN (${ph})`,
+          ids
+        );
+        featuredItems = ids.map(id => items.find(it => it.id === id)).filter(Boolean);
+      }
     }
-  }
 
-  res.json({
-    username: user.username,
-    avatar_url: user.avatar_url,
-    banner_url: user.banner_url,
-    bio: user.bio,
-    status: user.minecraft_uuid ? 'player' : 'guest',
-    badges: shownBadges,
-    featuredItems,
-    created_at: user.created_at
-  });
+    res.json({
+      username: user.username,
+      avatar_url: user.avatar_url,
+      banner_url: user.banner_url,
+      bio: user.bio,
+      status: user.minecraft_uuid ? 'player' : 'guest',
+      badges: shownBadges,
+      featuredItems,
+      created_at: user.created_at
+    });
+
+  } catch(err) {
+    console.error('Profile error:', err);
+    res.status(500).json({ error: 'Помилка сервера: ' + err.message });
+  }
 });
 
 router.get('/me/edit', authUser, async (req, res) => {
