@@ -38,7 +38,8 @@ router.get('/user/:username', async (req, res) => {
 
     let shownBadges = allBadges;
     if (user.featured_badges) {
-      const ids = JSON.parse(user.featured_badges).map(Number);
+      const parsed = JSON.parse(user.featured_badges);
+      const ids = (Array.isArray(parsed) ? parsed : [parsed]).map(Number);
       if (ids.length) {
         shownBadges = ids.map(id => allBadges.find(b => b.id === id)).filter(Boolean);
       }
@@ -46,7 +47,8 @@ router.get('/user/:username', async (req, res) => {
 
     let featuredItems = [];
     if (user.featured_items) {
-      const ids = JSON.parse(user.featured_items).map(Number);
+      const parsed = JSON.parse(user.featured_items);
+      const ids = (Array.isArray(parsed) ? parsed : [parsed]).map(Number);
       if (ids.length) {
         const ph = ids.map(() => '?').join(',');
         const [items] = await db.execute(
@@ -81,8 +83,10 @@ router.get('/me/edit', authUser, async (req, res) => {
   );
   if (!rows.length) return res.status(404).json({ error: 'Не знайдено' });
   const u = rows[0];
-  u.featured_items  = u.featured_items  ? JSON.parse(u.featured_items)  : [];
-  u.featured_badges = u.featured_badges ? JSON.parse(u.featured_badges) : [];
+  const fi = u.featured_items  ? JSON.parse(u.featured_items)  : [];
+  const fb = u.featured_badges ? JSON.parse(u.featured_badges) : [];
+  u.featured_items  = Array.isArray(fi) ? fi : [fi];
+  u.featured_badges = Array.isArray(fb) ? fb : [fb];
   res.json(u);
 });
 
