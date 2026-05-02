@@ -18,6 +18,7 @@ router.get('/my', authUser, async (req, res) => {
   const [rows] = await db.execute(`
     SELECT
       ui.id, ui.quantity, ui.obtained_at, ui.obtained_from,
+      i.id AS item_id,
       i.slug, i.name, i.description, i.image_url, i.category, i.rarity
     FROM user_items ui
     JOIN items i ON i.id = ui.item_id
