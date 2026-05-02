@@ -13,6 +13,18 @@ function authUser(req, res, next) {
   }
 }
 
+// Безпечний парсер масиву
+function safeParseArray(val) {
+  if (!val) return [];
+  try {
+    let parsed = typeof val === 'string' ? JSON.parse(val) : val;
+    if (typeof parsed === 'string') parsed = JSON.parse(parsed);
+    return Array.isArray(parsed) ? parsed.map(Number) : [];
+  } catch {
+    return [];
+  }
+}
+
 router.get('/user/:username', async (req, res) => {
   try {
     const [users] = await db.execute(`
@@ -36,27 +48,25 @@ router.get('/user/:username', async (req, res) => {
       WHERE ub.user_id = ? ORDER BY ub.obtained_at ASC
     `, [user.id]);
 
+    const featuredBadgeIds = safeParseArray(user.featured_badges);
     let shownBadges = allBadges;
-    if (user.featured_badges) {
-      const parsed = JSON.parse(user.featured_badges);
-      const ids = (Array.isArray(parsed) ? parsed : [parsed]).map(Number);
-      if (ids.length) {
-        shownBadges = ids.map(id => allBadges.find(b => b.id === id)).filter(Boolean);
-      }
+    if (featuredBadgeIds.length) {
+      shownBadges = featuredBadgeIds
+        .map(id => allBadges.find(b => b.id === id))
+        .filter(Boolean);
     }
 
+    const featuredItemIds = safeParseArray(user.featured_items);
     let featuredItems = [];
-    if (user.featured_items) {
-      const parsed = JSON.parse(user.featured_items);
-      const ids = (Array.isArray(parsed) ? parsed : [parsed]).map(Number);
-      if (ids.length) {
-        const ph = ids.map(() => '?').join(',');
-        const [items] = await db.execute(
-          `SELECT i.id, i.slug, i.name, i.image_url, i.rarity FROM items i WHERE i.id IN (${ph})`,
-          ids
-        );
-        featuredItems = ids.map(id => items.find(it => it.id === id)).filter(Boolean);
-      }
+    if (featuredItemIds.length) {
+      const ph = featuredItemIds.map(() => '?').join(',');
+      const [items] = await db.execute(
+        `SELECT i.id, i.slug, i.name, i.image_url, i.rarity FROM items i WHERE i.id IN (${ph})`,
+        featuredItemIds
+      );
+      featuredItems = featuredItemIds
+        .map(id => items.find(it => it.id === id))
+        .filter(Boolean);
     }
 
     res.json({
@@ -83,10 +93,8 @@ router.get('/me/edit', authUser, async (req, res) => {
   );
   if (!rows.length) return res.status(404).json({ error: 'Не знайдено' });
   const u = rows[0];
-  const fi = u.featured_items  ? JSON.parse(u.featured_items)  : [];
-  const fb = u.featured_badges ? JSON.parse(u.featured_badges) : [];
-  u.featured_items  = Array.isArray(fi) ? fi : [fi];
-  u.featured_badges = Array.isArray(fb) ? fb : [fb];
+  u.featured_items  = safeParseArray(u.featured_items);
+  u.featured_badges = safeParseArray(u.featured_badges);
   res.json(u);
 });
 
@@ -99,7 +107,6 @@ router.get('/me/avatars', authUser, async (req, res) => {
   res.json(items);
 });
 
-// ВИПРАВЛЕНО: прибрано умову на cosmetic_type
 router.get('/me/backgrounds', authUser, async (req, res) => {
   const [items] = await db.execute(`
     SELECT i.id, i.slug, i.name, i.image_url, i.rarity
